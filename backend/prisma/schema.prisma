@@ -1,0 +1,197 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  PROJECT_MANAGER
+  DEVELOPER
+  QA
+  VIEWER
+}
+
+enum ProjectStatus {
+  DRAFT
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  ARCHIVED
+}
+
+enum SprintStatus {
+  PLANNED
+  ACTIVE
+  CLOSED
+  CANCELLED
+}
+
+enum WorkItemType {
+  EPIC
+  STORY
+  TASK
+  DEFECT
+}
+
+enum WorkItemStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  QA
+  BLOCKED
+  DONE
+  REJECTED
+  CANCELLED
+  OPEN
+  CLOSED
+  REOPENED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum HistoryActionType {
+  CREATED
+  STATUS_CHANGED
+  ASSIGNED
+  UNASSIGNED
+  MOVED_TO_SPRINT
+  REMOVED_FROM_SPRINT
+  UPDATED
+  COMMENT_ADDED
+}
+
+model User {
+  id                 String            @id @default(uuid())
+  firstName          String
+  lastName           String
+  email              String            @unique
+  passwordHash       String
+  role               UserRole          @default(DEVELOPER)
+  isActive           Boolean           @default(true)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  projectMemberships ProjectMember[]
+  assignedItems      WorkItem[]        @relation("AssignedWorkItems")
+  reportedItems      WorkItem[]        @relation("ReportedWorkItems")
+  comments           Comment[]
+  ownedProjects      Project[]         @relation("ProjectOwner")
+  historyChanges     WorkItemHistory[]
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  name        String
+  key         String        @unique
+  description String?
+  status      ProjectStatus @default(DRAFT)
+  ownerId     String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  owner       User          @relation("ProjectOwner", fields: [ownerId], references: [id])
+  members     ProjectMember[]
+  sprints     Sprint[]
+  workItems   WorkItem[]
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  projectId String
+  userId    String
+  role      UserRole @default(DEVELOPER)
+  joinedAt  DateTime @default(now())
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+model Sprint {
+  id        String       @id @default(uuid())
+  name      String
+  goal      String?
+  startDate DateTime?
+  endDate   DateTime?
+  status    SprintStatus @default(PLANNED)
+  projectId String
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workItems WorkItem[]
+}
+
+model WorkItem {
+  id                 String             @id @default(uuid())
+  code               String             @unique
+  title              String
+  description        String?
+  type               WorkItemType
+  status             WorkItemStatus     @default(TODO)
+  priority           Priority           @default(MEDIUM)
+
+  projectId          String
+  sprintId           String?
+  assigneeId         String?
+  reporterId         String
+  parentId           String?
+
+  storyPoints        Int?
+  estimateHours      Float?
+  severity           String?
+  acceptanceCriteria String?
+  stepsToReproduce   String?
+  expectedResult     String?
+  actualResult       String?
+
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  project            Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sprint             Sprint?            @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  assignee           User?              @relation("AssignedWorkItems", fields: [assigneeId], references: [id], onDelete: SetNull)
+  reporter           User               @relation("ReportedWorkItems", fields: [reporterId], references: [id], onDelete: Restrict)
+
+  parent             WorkItem?          @relation("WorkItemHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children           WorkItem[]         @relation("WorkItemHierarchy")
+
+  comments           Comment[]
+  history            WorkItemHistory[]
+}
+
+model Comment {
+  id         String    @id @default(uuid())
+  content    String
+  authorId   String
+  workItemId String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  author     User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  workItem   WorkItem  @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+}
+
+model WorkItemHistory {
+  id          String            @id @default(uuid())
+  workItemId  String
+  actionType  HistoryActionType
+  field       String?
+  oldValue    String?
+  newValue    String?
+  changedById String?
+  createdAt   DateTime          @default(now())
+
+  workItem    WorkItem          @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  changedBy   User?             @relation(fields: [changedById], references: [id], onDelete: SetNull)
+}
